@@ -23,6 +23,17 @@ pub enum ClothesState {
     Tattered,
 }
 
+impl ClothesState {
+    fn life(&self) -> Option<u64> {
+        match self {
+            ClothesState::Clean(x) => Some(*x),
+            ClothesState::Dirty(x) => Some(*x),
+            ClothesState::Wet(x) => Some(*x),
+            ClothesState::Tattered => None,
+        }
+    }
+}
+
 /// Something you can do with clothes
 pub enum ClothesAction {
     /// Wearing clothes decreases their life by 1 and makes them dirty.
@@ -40,7 +51,22 @@ impl StateMachine for ClothesMachine {
     type Transition = ClothesAction;
 
     fn next_state(starting_state: &ClothesState, t: &ClothesAction) -> ClothesState {
-        todo!("Exercise 3")
+        if let Some(1) = starting_state.life() {
+            ClothesState::Tattered
+        } else if let Some(life) = starting_state.life() {
+            match t {
+                ClothesAction::Wear => ClothesState::Dirty(life - 1),
+                ClothesAction::Wash => ClothesState::Wet(life - 1),
+                ClothesAction::Dry => match starting_state {
+                    ClothesState::Clean(_) => ClothesState::Clean(life - 1),
+                    ClothesState::Wet(_) => ClothesState::Clean(life - 1),
+                    ClothesState::Dirty(_) => ClothesState::Dirty(life - 1),
+                    ClothesState::Tattered => unreachable!(),
+                },
+            }
+        } else {
+            ClothesState::Tattered
+        }
     }
 }
 

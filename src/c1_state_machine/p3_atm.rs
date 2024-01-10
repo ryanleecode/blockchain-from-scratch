@@ -14,6 +14,33 @@ pub enum Key {
     Enter,
 }
 
+struct KeySequence<'a>(&'a Vec<Key>);
+
+impl From<Key> for String {
+    fn from(value: Key) -> Self {
+        match value {
+            Key::One => "1".to_string(),
+            Key::Two => "2".to_string(),
+            Key::Three => "3".to_string(),
+            Key::Four => "4".to_string(),
+            Key::Enter => "5".to_string(),
+        }
+    }
+}
+
+impl<'a> From<KeySequence<'a>> for u64 {
+    fn from(value: KeySequence<'a>) -> Self {
+        value
+            .0
+            .into_iter()
+            .map(|k| String::from(k.clone()))
+            .collect::<Vec<String>>()
+            .join("")
+            .parse::<u64>()
+            .unwrap_or(0u64)
+    }
+}
+
 /// Something you can do to the ATM
 pub enum Action {
     /// Swipe your card at the ATM. The attached value is the hash of the pin
@@ -58,7 +85,69 @@ impl StateMachine for Atm {
     type Transition = Action;
 
     fn next_state(starting_state: &Self::State, t: &Self::Transition) -> Self::State {
-        todo!("Exercise 4")
+        match t {
+            Action::SwipeCard(hash) => match starting_state.expected_pin_hash {
+                Auth::Waiting => Self::State {
+                    expected_pin_hash: Auth::Authenticating(*hash),
+                    keystroke_register: Vec::new(),
+                    ..starting_state.clone()
+                },
+                _ => starting_state.clone(),
+            },
+            Action::PressKey(key) => match starting_state.expected_pin_hash {
+                Auth::Authenticating(hash) => match key {
+                    Key::Enter => {
+                        let pin_hash = crate::hash(&starting_state.keystroke_register);
+                        if hash == pin_hash {
+                            Self::State {
+                                expected_pin_hash: Auth::Authenticated,
+                                keystroke_register: Vec::new(),
+                                ..starting_state.clone()
+                            }
+                        } else {
+                            Self::State {
+                                expected_pin_hash: Auth::Waiting,
+                                keystroke_register: Vec::new(),
+                                ..starting_state.clone()
+                            }
+                        }
+                    }
+                    _ => Self::State {
+                        keystroke_register: [
+                            starting_state.keystroke_register.clone(),
+                            vec![key.clone()],
+                        ]
+                        .concat(),
+                        ..starting_state.clone()
+                    },
+                },
+                Auth::Authenticated => match key {
+                    Key::Enter => {
+                        let amount: u64 = KeySequence(&starting_state.keystroke_register).into();
+                        let cash_inside_next = if amount > starting_state.cash_inside {
+                            starting_state.cash_inside
+                        } else {
+                            starting_state.cash_inside - amount
+                        };
+                        Self::State {
+                            cash_inside: cash_inside_next,
+                            expected_pin_hash: Auth::Waiting,
+                            keystroke_register: Vec::new(),
+                            ..starting_state.clone()
+                        }
+                    }
+                    _ => Self::State {
+                        keystroke_register: [
+                            starting_state.keystroke_register.clone(),
+                            vec![key.clone()],
+                        ]
+                        .concat(),
+                        ..starting_state.clone()
+                    },
+                },
+                _ => starting_state.clone(),
+            },
+        }
     }
 }
 
@@ -239,6 +328,7 @@ fn sm_3_try_to_withdraw_too_much() {
         keystroke_register: vec![Key::One, Key::Four],
     };
     let end = Atm::next_state(&start, &Action::PressKey(Key::Enter));
+
     let expected = Atm {
         cash_inside: 10,
         expected_pin_hash: Auth::Waiting,
